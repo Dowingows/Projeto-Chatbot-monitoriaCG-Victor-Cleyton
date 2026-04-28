@@ -21,12 +21,28 @@ RESUME_PROMPT = """Com base nesse histórico: [{history}], e nesse input: [{ques
 # --- Preparação do ambiente ---
 
 def ensure_knowledge_base():
-    if not os.path.exists(CHROMA_PATH) or not os.path.exists(TOPICS_PATH):
-        print("Base de conhecimento não encontrada. Construindo agora...")
+    needs_build = (
+        not os.path.exists(CHROMA_PATH)
+        or not os.path.exists(TOPICS_PATH)
+        or _collection_empty()
+    )
+    if needs_build:
+        print("Base de conhecimento não encontrada ou vazia. Construindo agora...")
         print("Isso pode levar alguns minutos na primeira execução.\n")
         from kb_builder import main as build_kb
         build_kb()
         print()
+
+
+def _collection_empty() -> bool:
+    try:
+        from langchain_chroma import Chroma
+        from langchain_ollama import OllamaEmbeddings
+        db = Chroma(persist_directory=CHROMA_PATH,
+                    embedding_function=OllamaEmbeddings(model=EMBED_MODEL))
+        return db._collection.count() == 0
+    except Exception:
+        return True
 
 
 # --- Core: retorna resultado estruturado ---
