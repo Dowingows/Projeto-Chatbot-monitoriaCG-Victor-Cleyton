@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from config import (
     CHROMA_PATH, TOPICS_PATH, CHAT_MODEL, EMBED_MODEL,
-    NO_INFO_THRESHOLD, OUT_OF_SCOPE,
+    NO_INFO_THRESHOLD, OUT_OF_SCOPE, GLOBAL_SEARCH,
 )
 from agents.history import init_db, load_history, save_history
 from agents.router import route_question, identify_area
@@ -82,7 +82,8 @@ def run(user_key: str, question: str) -> dict:
         }
 
     # Etapa 4: geração da resposta
-    response = generate_response(query, topic, results, model)
+    display_topic = topic if topic != GLOBAL_SEARCH else "Computação Gráfica"
+    response = generate_response(query, display_topic, results, model)
     sources = list(set(doc.metadata.get("source", "") for doc, _ in results))
 
     save_history(conn, user_key, question, response)
@@ -90,7 +91,7 @@ def run(user_key: str, question: str) -> dict:
 
     return {
         "response": response,
-        "topic": topic,
+        "topic": display_topic,
         "search_type": search_type,
         "sources": [s for s in sources if s],
         "out_of_scope": False,
