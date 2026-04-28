@@ -16,3 +16,6 @@ HYBRID_THRESHOLD = 0.5
 NO_INFO_THRESHOLD = 0.1
 
 GLOBAL_SEARCH = "GLOBAL"
+
+# Número de candidatos gerados pelo responder (critic escolhe o melhor)
+NUM_CANDIDATES = 2

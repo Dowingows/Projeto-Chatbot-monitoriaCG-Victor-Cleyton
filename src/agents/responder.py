@@ -1,25 +1,33 @@
+import re
+
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 
-ANSWER_PROMPT = """Você é um professor de Computação Gráfica explicando o tópico "{topic}" para um aluno de graduação.
-Responda com base APENAS no contexto fornecido, sem inventar informações.
+from config import NUM_CANDIDATES, CHAT_MODEL
 
-Estruture sua resposta em Markdown com as seguintes seções, quando aplicável:
+CANDIDATE_PROMPT = """Você é um professor de Computação Gráfica especializado em {topic}.
+
+REGRAS OBRIGATÓRIAS:
+- Baseie sua resposta EXCLUSIVAMENTE nas passagens do contexto abaixo.
+- O contexto pode estar em inglês — traduza os trechos relevantes e explique em português.
+- NÃO invente definições, aplicações ou exemplos que não estejam no contexto.
+- Se o contexto for insuficiente para uma seção, omita-a silenciosamente.
+
+Estruture em Markdown:
 
 ## O que é
-Explique o conceito de forma clara e direta.
+Defina o conceito usando as palavras do contexto.
 
 ## Aplicações
-Liste as principais aplicações práticas (use bullet points).
+Liste aplicações mencionadas no contexto (bullet points).
 
 ## Exemplo
-Dê um exemplo concreto do conceito em ação.
+Dê um exemplo concreto presente ou inferível do contexto.
 
 ## Analogia
-Faça uma analogia com algo do mundo real para facilitar a compreensão.
+Faça uma analogia com o mundo real para facilitar a compreensão.
 
 ---
-
 Contexto:
 {context}
 
@@ -27,12 +35,54 @@ Pergunta: {question}
 
 Resposta:"""
 
+CRITIC_PROMPT = """Você é um avaliador de respostas educacionais sobre Computação Gráfica.
+
+Pergunta: {question}
+
+Avalie as {n} respostas abaixo e escolha a que:
+1. Responde corretamente e diretamente à pergunta
+2. Está baseada em conteúdo técnico real de Computação Gráfica (não em conhecimento genérico)
+3. É mais precisa e completa
+
+Responda APENAS com o número da melhor resposta (ex: 1 ou 2).
+
+{candidates}
+
+Melhor resposta (apenas o número):"""
+
+
+def _split_results(results: list, n: int) -> list[list]:
+    """Divide results into n groups; group i gets results[i::n] (interleaved by score rank)."""
+    return [results[i::n] for i in range(n) if results[i::n]]
+
 
 def generate_response(query: str, topic: str, results: list, model: ChatOllama) -> str:
-    context = "\n\n---\n\n".join(doc.page_content for doc, _ in results)
-    return (ChatPromptTemplate.from_template(ANSWER_PROMPT) | model).invoke(
-        {"topic": topic, "context": context, "question": query}
-    ).content
+    n = min(NUM_CANDIDATES, len(results))
+    groups = _split_results(results, n)
+
+    candidates = []
+    for group in groups:
+        context = "\n\n---\n\n".join(doc.page_content for doc, _ in group)
+        response = (ChatPromptTemplate.from_template(CANDIDATE_PROMPT) | model).invoke(
+            {"topic": topic, "context": context, "question": query}
+        ).content
+        candidates.append(response)
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    numbered = "\n\n".join(f"=== Resposta {i + 1} ===\n{c}" for i, c in enumerate(candidates))
+    critic = ChatOllama(model=CHAT_MODEL, temperature=0)
+    raw = (ChatPromptTemplate.from_template(CRITIC_PROMPT) | critic).invoke({
+        "question": query,
+        "n": n,
+        "candidates": numbered,
+    }).content.strip()
+
+    match = re.search(r"\d", raw)
+    idx = int(match.group()) - 1 if match else 0
+    idx = max(0, min(idx, len(candidates) - 1))
+    return candidates[idx]
 
 
 def out_of_scope_message(area: str, topics: list[str]) -> str:
