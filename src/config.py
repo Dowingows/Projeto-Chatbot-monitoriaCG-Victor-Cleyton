@@ -13,7 +13,6 @@ EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 # Busca híbrida: score mínimo para preferir resultado filtrado por tópico
 HYBRID_THRESHOLD = 0.5
 # Score mínimo para considerar que há informação relevante
-NO_INFO_THRESHOLD = 0.3
+NO_INFO_THRESHOLD = 0.1
 
-OUT_OF_SCOPE = "FORA_DE_ESCOPO"
 GLOBAL_SEARCH = "GLOBAL"

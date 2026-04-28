@@ -8,12 +8,12 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from config import (
     CHROMA_PATH, TOPICS_PATH, CHAT_MODEL, EMBED_MODEL,
-    NO_INFO_THRESHOLD, OUT_OF_SCOPE, GLOBAL_SEARCH,
+    NO_INFO_THRESHOLD, GLOBAL_SEARCH,
 )
 from agents.history import init_db, load_history, save_history
-from agents.router import route_question, identify_area
+from agents.router import route_question
 from agents.retriever import hybrid_search
-from agents.responder import generate_response, out_of_scope_message
+from agents.responder import generate_response
 
 RESUME_PROMPT = """Com base nesse histórico: [{history}], e nesse input: [{question}], crie APENAS um input resumindo o que o usuário deseja saber para ser utilizado em um agente de LLM. NUNCA responda a pergunta do usuário."""
 
@@ -46,17 +46,6 @@ def run(user_key: str, question: str) -> dict:
     # Etapa 1: roteamento na pergunta original
     topic = route_question(question, topics, router_model)
 
-    if topic == OUT_OF_SCOPE:
-        area = identify_area(question, router_model)
-        conn.close()
-        return {
-            "response": out_of_scope_message(area, topics),
-            "topic": None,
-            "search_type": None,
-            "sources": [],
-            "out_of_scope": True,
-        }
-
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
     # Etapa 2: enriquece com histórico se a pergunta for em escopo
@@ -69,20 +58,20 @@ def run(user_key: str, question: str) -> dict:
         query = question
 
     # Etapa 3: busca híbrida
+    display_topic = topic if topic != GLOBAL_SEARCH else "Computação Gráfica"
     results, search_type = hybrid_search(db, query, topic)
 
     if not results or results[0][1] < NO_INFO_THRESHOLD:
         conn.close()
         return {
             "response": "Não encontrei informações suficientes sobre esse assunto na base de conhecimento.",
-            "topic": topic,
+            "topic": display_topic,
             "search_type": search_type,
             "sources": [],
             "out_of_scope": False,
         }
 
     # Etapa 4: geração da resposta
-    display_topic = topic if topic != GLOBAL_SEARCH else "Computação Gráfica"
     response = generate_response(query, display_topic, results, model)
     sources = list(set(doc.metadata.get("source", "") for doc, _ in results))
 
