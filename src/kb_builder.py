@@ -10,18 +10,25 @@ from langchain_core.prompts import ChatPromptTemplate
 from config import DOCS_PATH, CHROMA_PATH, TOPICS_PATH, EMBED_MODEL, CHAT_MODEL
 
 TOPIC_PROMPT = """Você é um especialista em Computação Gráfica.
-Analise o nome e a amostra de conteúdo deste arquivo e responda com um rótulo genérico e curto (2-4 palavras em português) que descreva o tópico principal.
-Responda APENAS com o rótulo, sem explicações ou pontuação extra.
+Analise o NOME DO ARQUIVO abaixo e defina o tópico técnico de Computação Gráfica que ele cobre.
+
+Regras:
+- O nome do arquivo é a fonte mais confiável. Priorize-o.
+- Responda com 2-4 palavras descrevendo o CONTEÚDO TÉCNICO (ex: "Viewing 2D", "OpenGL", "Transformações 3D", "Iluminação", "Algoritmos de Seleção").
+- NUNCA use: Documentação, Material, Guia, Apostila, Slides, PDF, Arquivo, Livro.
+- Se o nome não for claro, use a amostra de conteúdo como apoio.
+- Responda APENAS com o nome do tópico, sem explicações.
 
 Nome do arquivo: {filename}
-Amostra do conteúdo: {sample}
+Amostra do conteúdo (pode conter metadados, priorize o nome do arquivo): {sample}
 
 Tópico:"""
 
 
 def extract_topic(filename: str, sample: str, model: ChatOllama) -> str:
+    # Usa chunks intermediários para evitar capas/metadados
     return (ChatPromptTemplate.from_template(TOPIC_PROMPT) | model).invoke(
-        {"filename": filename, "sample": sample[:500]}
+        {"filename": filename, "sample": sample[:300]}
     ).content.strip()
 
 
@@ -51,7 +58,8 @@ def main():
     file_topics: dict[str, str] = {}
     for source, file_docs in file_chunks.items():
         filename = os.path.basename(source)
-        topic = extract_topic(filename, file_docs[0].page_content, model)
+        mid = max(1, len(file_docs) // 3)  # skip cover/metadata pages
+        topic = extract_topic(filename, file_docs[mid].page_content, model)
         file_topics[source] = topic
         print(f"  {filename} → {topic}")
 
