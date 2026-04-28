@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Luan.AI</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="logo">Luan<span>.AI</span></div>
+        <button id="new-chat-btn" title="Nova conversa">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Nova conversa
+        </button>
+      </div>
+      <div class="sidebar-info">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+        <span>Monitoria de Computação Gráfica</span>
+      </div>
+    </aside>
+
+    <main class="chat-area">
+      <div class="messages" id="messages">
+        <div class="welcome" id="welcome">
+          <div class="welcome-logo">Luan<span>.AI</span></div>
+          <p>Olá! Sou a assistente da disciplina de <strong>Computação Gráfica</strong>.<br>Como posso ajudar você hoje?</p>
+          <div class="suggestions">
+            <button class="suggestion-btn">O que é pipeline gráfico?</button>
+            <button class="suggestion-btn">Como funcionam as transformações 2D?</button>
+            <button class="suggestion-btn">Explique o modelo de iluminação de Phong</button>
+            <button class="suggestion-btn">O que é Viewing 3D?</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-wrapper">
+        <div class="input-box">
+          <textarea
+            id="message-input"
+            placeholder="Pergunte sobre Computação Gráfica..."
+            rows="1"
+          ></textarea>
+          <button id="send-btn" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+            </svg>
+          </button>
+        </div>
+        <p class="disclaimer">Respostas baseadas no material da disciplina. Pode cometer erros.</p>
+      </div>
+    </main>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

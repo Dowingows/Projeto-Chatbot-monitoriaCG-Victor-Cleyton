@@ -42,3 +42,16 @@ def load_history(conn: sqlite3.Connection, user_key: str) -> str:
     ).fetchall()
     rows.reverse()
     return "\n".join(f"{role.capitalize()}: {content}" for role, content in rows)
+
+
+def get_messages(conn: sqlite3.Connection, user_key: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT role, content FROM history WHERE user_key = ? ORDER BY id",
+        (user_key,),
+    ).fetchall()
+    return [{"role": role, "content": content} for role, content in rows]
+
+
+def clear_user_history(conn: sqlite3.Connection, user_key: str):
+    conn.execute("DELETE FROM history WHERE user_key = ?", (user_key,))
+    conn.commit()
