@@ -1,89 +1,165 @@
-# Script responsável pelo ChatBot.
-
 import os
-
+import json
+import sqlite3
 import argparse
-import openai
+
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
-from langchain_openai import ChatOpenAI
+from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-import redis
-import json
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 CHROMA_PATH = "chroma"
-PROMPT_TEMPLATE = "Você é uma IA monitora de Computação Gráfica, responda essa pergunta: {question}, com base nesse contexto: {context}. NÃO utilize informações de fora do contexto dado. A mensagem será impressa em um terminal simples, então NÃO use códigos de formatação."
-RESUME_TEMPLATE = "Com base nesse histórico: [{history}], e nesse input: [{question}], crie APENAS um input resumindo o que o usuário deseja saber para ser utilizado em um agente de LLM. NUNCA responda a pergunta do usuário."
+TOPICS_PATH = "chroma/topics.json"
+CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2")
+EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+DB_PATH = os.getenv("HISTORY_DB", "history.db")
 
-r = redis.from_url("redis://localhost:6379/0")
+# Cosine similarity: score maior = mais similar (ChromaDB retorna valores entre 0 e 1)
+HYBRID_THRESHOLD = 0.5   # abaixo disso, ignora o filtro e faz busca global
+NO_INFO_THRESHOLD = 0.3  # abaixo disso, não há informação relevante
 
-def redis_save_history(key, question, response):
-    # Envia mensagem do usuário juntamente com a resposta do agente para o banco de dados, onde é armazenado o histórico de conversas.
-    message = {"Usuário": question, "IA": response}
-    r.rpush(key, json.dumps(message))
-    # A instrução abaixo informa ao banco para manter apenas as últimas 5 conversas.
-    r.ltrim(key, -5, -1)
+ROUTER_PROMPT = """Você é um classificador de perguntas sobre Computação Gráfica.
+Classifique a pergunta abaixo no tópico mais adequado da lista.
+Responda APENAS com o texto exato do tópico (cópia da lista), sem explicações.
+Se não encaixar em nenhum, responda "Geral".
 
-def redis_load_history(key):
-    # Recupera histórico de conversas do usuário.
-    raw = r.lrange(key, 0, -1)
-    texts = []
+Tópicos disponíveis:
+{topics}
 
-    # Junta todo o histórico em um único bloco de texto e retorna.
-    for item in raw:
-        msg = json.loads(item.decode())
-        user = msg.get("Usuário", "")
-        ai = msg.get("IA", "")
+Pergunta: {question}
 
-        texts.append(f"Usuário: {user}\nIA: {ai}")
+Tópico:"""
 
-    return "\n\n".join(texts)
+ANSWER_PROMPT = """Você é uma IA monitora de Computação Gráfica especializada em {topic}.
+Responda a pergunta com base no contexto fornecido.
+NÃO utilize informações de fora do contexto. A resposta será impressa em terminal, NÃO use formatação especial.
 
-def main(key, question):  
-    """ 
-    Checa se chave do usuário existe. Se sim, recupera histórico de conversas e envia juntamente com input para o agente de IA.
-    O agente é responsável por analisar o input e o histórico e resumir em um input o que o usuário deseja.
-    """
-    if r.exists(key):
-        history = redis_load_history(key)
-        prompt_template = ChatPromptTemplate.from_template(RESUME_TEMPLATE)
-        prompt = prompt_template.format(history=history, question=question)
-        model = ChatOpenAI(model="gpt-4o-mini")
-        response_text = model.invoke(prompt)
-        query_text = response_text.content
-    else:
-        query_text = question
+Contexto:
+{context}
 
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+Pergunta: {question}
+
+Resposta:"""
+
+RESUME_PROMPT = """Com base nesse histórico: [{history}], e nesse input: [{question}], crie APENAS um input resumindo o que o usuário deseja saber para ser utilizado em um agente de LLM. NUNCA responda a pergunta do usuário."""
+
+
+# --- Histórico com SQLite ---
+
+def init_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_key   TEXT NOT NULL,
+            role       TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    return conn
+
+
+def save_history(conn: sqlite3.Connection, user_key: str, question: str, response: str):
+    conn.execute(
+        "INSERT INTO history (user_key, role, content) VALUES (?, ?, ?)",
+        (user_key, "user", question),
+    )
+    conn.execute(
+        "INSERT INTO history (user_key, role, content) VALUES (?, ?, ?)",
+        (user_key, "assistant", response),
+    )
+    # Mantém apenas as últimas 10 mensagens (5 trocas) por usuário
+    conn.execute("""
+        DELETE FROM history WHERE user_key = ? AND id NOT IN (
+            SELECT id FROM history WHERE user_key = ? ORDER BY id DESC LIMIT 10
+        )
+    """, (user_key, user_key))
+    conn.commit()
+
+
+def load_history(conn: sqlite3.Connection, user_key: str) -> str:
+    rows = conn.execute(
+        "SELECT role, content FROM history WHERE user_key = ? ORDER BY id DESC LIMIT 10",
+        (user_key,),
+    ).fetchall()
+    rows.reverse()
+    return "\n".join(f"{role.capitalize()}: {content}" for role, content in rows)
+
+
+# --- Router semântico ---
+
+def route_question(question: str, topics: list[str], model: ChatOllama) -> str:
+    result = (ChatPromptTemplate.from_template(ROUTER_PROMPT) | model).invoke({
+        "topics": "\n".join(f"- {t}" for t in topics),
+        "question": question,
+    }).content.strip()
+    return result if result in topics else "Geral"
+
+
+# --- Busca híbrida ---
+
+def hybrid_search(db: Chroma, query: str, topic: str, k: int = 5):
+    filtered = db.similarity_search_with_relevance_scores(
+        query, k=k, filter={"topic": topic}
+    )
+    if filtered and filtered[0][1] >= HYBRID_THRESHOLD:
+        return filtered, "filtrado"
+    return db.similarity_search_with_relevance_scores(query, k=k), "global"
+
+
+# --- Main ---
+
+def main(user_key: str, question: str):
+    conn = init_db()
+    model = ChatOllama(model=CHAT_MODEL)
+    embeddings = OllamaEmbeddings(model=EMBED_MODEL)
+
+    with open(TOPICS_PATH, encoding="utf-8") as f:
+        topics: list[str] = json.load(f)["topics"]
+
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
-    # Busca informações com base na similaridade com o assunto da pergunta no banco de dados.
-    results = db.similarity_search_with_score(query_text, k=5)
-    if len(results) == 0 or results[0][1] < 0.5:
-        return "Lamento, não possuo informações sobre esse assunto."
+    # Enriquece a pergunta com o contexto do histórico, se houver
+    history = load_history(conn, user_key)
+    if history:
+        query = (ChatPromptTemplate.from_template(RESUME_PROMPT) | model).invoke(
+            {"history": history, "question": question}
+        ).content.strip()
+    else:
+        query = question
 
-    # Cria o texto com o contexto a ser usado com base nas informações retornadas.
-    context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
-    # Cria o prompt a ser enviado.
-    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    prompt = prompt_template.format(context=context_text, question=query_text)
-    model = ChatOpenAI(model="gpt-4o-mini")
-    # Retorna resposta do chatbot juntamente com as fontes utilizadas.
-    response_text = model.invoke(prompt)
-    sources = list(set([doc.metadata.get("source", None) for doc, _score in results]))
-    redis_save_history(key, question, response_text.content)
-    return (f"{response_text.content} \n Fontes: \n{sources}")
+    # Detecta tópico e executa busca híbrida
+    topic = route_question(query, topics, ChatOllama(model=CHAT_MODEL, temperature=0))
+    results, search_type = hybrid_search(db, query, topic)
+
+    if not results or results[0][1] < NO_INFO_THRESHOLD:
+        print("Lamento, não possuo informações sobre esse assunto.")
+        conn.close()
+        return
+
+    context = "\n\n---\n\n".join(doc.page_content for doc, _ in results)
+    sources = list(set(doc.metadata.get("source", "") for doc, _ in results))
+
+    response = (ChatPromptTemplate.from_template(ANSWER_PROMPT) | model).invoke(
+        {"topic": topic, "context": context, "question": query}
+    )
+
+    save_history(conn, user_key, question, response.content)
+    conn.close()
+
+    print(f"[Tópico: {topic} | Busca: {search_type}]")
+    print(response.content)
+    if sources:
+        print("\nFontes:\n" + "\n".join(sources))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("user_key")
     parser.add_argument("question")
-
     args = parser.parse_args()
-
-    result = main(key=args.user_key, question=args.question)
-    print(result)
+    main(user_key=args.user_key, question=args.question)
