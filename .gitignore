@@ -1,0 +1,18 @@
+# Dependências e ambiente virtual
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Base de conhecimento gerada (recriar com gen-kb.py)
+src/chroma/
+
+# Histórico de conversas
+src/history.db
+
+# Variáveis de ambiente
+.env
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

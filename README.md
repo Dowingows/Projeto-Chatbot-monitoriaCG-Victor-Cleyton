@@ -71,53 +71,65 @@ Em vez de definir manualmente uma lista de tópicos, o `gen-kb.py` usa o própri
 
 ```mermaid
 flowchart TD
-    A([Pergunta do usuário]) --> B{Tem histórico?}
-    B -- Sim --> C[LLM resume pergunta\ncom contexto do histórico]
-    B -- Não --> D[Usa pergunta original]
-    C --> E
-    D --> E
+    A([Pergunta do usuário]) --> B
 
-    E[Router Semântico\nLLM classifica o tópico] --> F{Busca híbrida}
+    B[Router Semântico\nLLM classifica na pergunta original] --> C{Em escopo?}
 
-    F --> G[Busca filtrada\npor tópico no ChromaDB]
-    G --> H{Score ≥ 0.5?}
-    H -- Sim --> J[Usa resultados filtrados]
-    H -- Não --> I[Busca global\nno ChromaDB]
-    I --> J
+    C -- Não --> D[LLM identifica a área\nex: História, Biologia...]
+    D --> E([Informa que só responde CG\nsem busca, sem fontes])
 
-    J --> K{Resultados relevantes?}
-    K -- Não --> L([Sem informação disponível])
-    K -- Sim --> M[Monta prompt\ntópico + contexto + pergunta]
-    M --> N[LLM gera resposta\nvia Ollama]
-    N --> O[Salva histórico\nno SQLite]
-    O --> P([Resposta + Fontes])
+    C -- Sim --> F{Tem histórico?}
+    F -- Sim --> G[LLM resume pergunta\ncom contexto do histórico]
+    F -- Não --> H[Usa pergunta original]
+    G --> I
+    H --> I
+
+    I[Busca híbrida no ChromaDB] --> J{Score filtrado ≥ 0.5?}
+    J -- Sim --> K[Usa resultados filtrados\npor tópico]
+    J -- Não --> L[Busca global\nsem filtro]
+    K --> M
+    L --> M
+
+    M{Resultados relevantes?}
+    M -- Não --> N([Sem informação disponível\nsem fontes])
+    M -- Sim --> O[LLM gera resposta\ncom tópico + contexto]
+    O --> P[Salva histórico\nno SQLite]
+    P --> Q([Resposta + Fontes])
 
     subgraph gen-kb
-        Q[PDFs] --> R[Chunking]
-        R --> S[LLM descobre tópico\npor arquivo]
-        S --> T[ChromaDB\ncom metadata de tópico]
-        S --> U[topics.json]
+        R[PDFs] --> S[Chunking]
+        S --> T[LLM descobre tópico\n1 chamada por arquivo]
+        T --> U[ChromaDB\ncom metadata de tópico]
+        T --> V[topics.json]
     end
 
-    T --> G
-    T --> I
-    U --> E
+    U --> I
+    V --> B
 ```
 
 ---
 
 ## Estrutura do Projeto
+
 ```
 Chatbot-CG
- ├── docs                -> Documentação sobre o projeto
+ ├── docs/                    -> Documentação sobre o projeto
  │
- ├── src                 -> Implementações e códigos
- │    ├── Docs/          -> PDFs (Slides, Materiais de Apoio, Livro)
- │    ├── chroma/        -> Banco vetorial ChromaDB + topics.json
- │    ├── gen-kb.py      -> Constrói a base de conhecimento
- │    ├── chatbot.py     -> Chatbot com router semântico
+ ├── src/                     -> Implementações e códigos
+ │    ├── Docs/               -> PDFs (Slides, Materiais de Apoio, Livro)
+ │    ├── chroma/             -> Banco vetorial ChromaDB + topics.json (gerado)
+ │    ├── agents/
+ │    │    ├── history.py     -> Histórico de conversas (SQLite)
+ │    │    ├── router.py      -> Router semântico + detecção de fora de escopo
+ │    │    ├── retriever.py   -> Busca híbrida (filtrada + global)
+ │    │    └── responder.py   -> Geração de resposta e mensagem out-of-scope
+ │    ├── config.py           -> Constantes e variáveis de ambiente
+ │    ├── kb_builder.py       -> Lógica de construção da base (importável)
+ │    ├── gen-kb.py           -> CLI para reconstruir a base de conhecimento
+ │    ├── chatbot.py          -> Orquestrador principal
  │    └── requirements.txt
  │
+ ├── .gitignore
  └── README.md
 ```
 
@@ -154,14 +166,15 @@ pip install -r requirements.txt
 
 ### Construir a base de conhecimento
 
-Execute dentro de `src/`:
+A base é construída **automaticamente na primeira execução** do chatbot. Só é necessário rodar manualmente quando novos PDFs forem adicionados à pasta `Docs/`:
+
 ```bash
 python gen-kb.py
 ```
 
 O script irá:
 - Carregar todos os PDFs da pasta `Docs/`
-- Classificar automaticamente cada arquivo em um tópico via LLM
+- Classificar automaticamente cada arquivo em um tópico via LLM (1 chamada por arquivo)
 - Criar o banco vetorial em `chroma/` e salvar os tópicos em `chroma/topics.json`
 
 ### Executar o chatbot
@@ -175,6 +188,14 @@ A chave do usuário é usada para recuperar o histórico de conversas no SQLite.
 python chatbot.py aluno123 "O que é pipeline gráfico?"
 ```
 
+Perguntas fora do escopo de Computação Gráfica são detectadas pelo router e recebem uma resposta informativa sem realizar busca na base:
+```
+$ python chatbot.py aluno123 "Quem descobriu o Brasil?"
+Sua pergunta parece ser sobre História do Brasil. Este chatbot é especializado
+em Computação Gráfica e responde apenas dúvidas relacionadas a essa disciplina.
+Posso ajudar com tópicos como: OpenGL, Iluminação, Viewing 3D, entre outros.
+```
+
 ---
 
 ## Resultados Parciais / Relatórios
@@ -182,3 +203,4 @@ python chatbot.py aluno123 "O que é pipeline gráfico?"
 |------|-----------|-------------|
 | 20/04/2026 | 100% concluído | Base do chatbot com OpenAI + Redis completa. |
 | 28/04/2026 | Em andamento | Adaptação para Ollama + SQLite + router semântico híbrido. |
+| 28/04/2026 | Em andamento | Refatoração modular: agentes separados, auto-setup, detecção de fora de escopo. |
