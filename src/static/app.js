@@ -85,7 +85,11 @@ function appendMessage(role, content, meta = {}) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = content;
+  if (role === 'assistant' && typeof marked !== 'undefined') {
+    bubble.innerHTML = marked.parse(content);
+  } else {
+    bubble.textContent = content;
+  }
   wrap.appendChild(bubble);
 
   if (role === 'assistant' && !meta.out_of_scope && meta.topic) {

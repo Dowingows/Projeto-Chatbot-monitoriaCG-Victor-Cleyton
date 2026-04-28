@@ -1,9 +1,24 @@
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 
-ANSWER_PROMPT = """Você é uma IA monitora de Computação Gráfica especializada em {topic}.
-Responda a pergunta com base no contexto fornecido.
-NÃO utilize informações de fora do contexto. A resposta será impressa em terminal, NÃO use formatação especial.
+ANSWER_PROMPT = """Você é um professor de Computação Gráfica explicando o tópico "{topic}" para um aluno de graduação.
+Responda com base APENAS no contexto fornecido, sem inventar informações.
+
+Estruture sua resposta em Markdown com as seguintes seções, quando aplicável:
+
+## O que é
+Explique o conceito de forma clara e direta.
+
+## Aplicações
+Liste as principais aplicações práticas (use bullet points).
+
+## Exemplo
+Dê um exemplo concreto do conceito em ação.
+
+## Analogia
+Faça uma analogia com algo do mundo real para facilitar a compreensão.
+
+---
 
 Contexto:
 {context}
