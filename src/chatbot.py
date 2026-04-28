@@ -44,9 +44,18 @@ def main(user_key: str, question: str):
     with open(TOPICS_PATH, encoding="utf-8") as f:
         topics: list[str] = json.load(f)["topics"]
 
+    # Etapa 3: roteamento na pergunta original (antes de qualquer processamento)
+    topic = route_question(question, topics, router_model)
+
+    if topic == OUT_OF_SCOPE:
+        area = identify_area(question, router_model)
+        print(out_of_scope_message(area, topics))
+        conn.close()
+        return
+
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
-    # Etapa 3: enriquece a pergunta com histórico, se houver
+    # Etapa 4: enriquece com histórico apenas se a pergunta for em escopo
     history = load_history(conn, user_key)
     if history:
         query = (ChatPromptTemplate.from_template(RESUME_PROMPT) | model).invoke(
@@ -54,15 +63,6 @@ def main(user_key: str, question: str):
         ).content.strip()
     else:
         query = question
-
-    # Etapa 4: roteamento semântico
-    topic = route_question(query, topics, router_model)
-
-    if topic == OUT_OF_SCOPE:
-        area = identify_area(query, router_model)
-        print(out_of_scope_message(area, topics))
-        conn.close()
-        return
 
     # Etapa 5: busca híbrida na base de conhecimento
     results, search_type = hybrid_search(db, query, topic)
