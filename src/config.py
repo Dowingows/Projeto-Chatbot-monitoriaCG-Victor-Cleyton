@@ -19,3 +19,13 @@ GLOBAL_SEARCH = "GLOBAL"
 
 # Número de candidatos gerados pelo responder (critic escolhe o melhor)
 NUM_CANDIDATES = 2
+
+# Subpastas de DOCS_PATH a incluir na KB (None = todas)
+# Ex: export DOCS_INCLUDE=Livros  →  carrega só Docs/Livros/
+DOCS_INCLUDE = [p.strip() for p in os.getenv("DOCS_INCLUDE", "").split(",") if p.strip()] or None
+
+# Páginas por grupo para classificação de tópico em arquivos grandes
+PAGE_GROUP_SIZE = int(os.getenv("PAGE_GROUP_SIZE", "15"))
+
+# Arquivo com mais páginas únicas que isso usa classificação por seção
+LARGE_FILE_THRESHOLD = int(os.getenv("LARGE_FILE_THRESHOLD", "50"))
