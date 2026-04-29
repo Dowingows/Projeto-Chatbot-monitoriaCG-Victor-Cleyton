@@ -5,33 +5,15 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from config import NUM_CANDIDATES, CHAT_MODEL
 
-CANDIDATE_PROMPT = """Você é um professor de Computação Gráfica especializado em {topic}.
+CANDIDATE_PROMPT = """Você é uma professora de Computação Gráfica explicando sobre {topic} para um aluno de graduação.
 
-REGRAS OBRIGATÓRIAS:
-- Baseie sua resposta EXCLUSIVAMENTE nas passagens do contexto abaixo.
-- O contexto pode estar em inglês — traduza os trechos relevantes e explique em português.
-- NÃO invente informações que não estejam no contexto.
-- Se o contexto for insuficiente para algum ponto, omita-o silenciosamente.
+REGRAS:
+- Use EXCLUSIVAMENTE as informações do contexto abaixo. Não invente.
+- O contexto pode estar em inglês — leia, entenda e explique em português.
+- Responda de forma natural e fluida, como numa conversa de monitoria.
+- Não use seções fixas, títulos ou templates. Escreva em prosa ou com listas quando fizer sentido organicamente.
+- Se o contexto for insuficiente para responder, diga o que sabe pelo contexto e indique a limitação.
 
-FORMATO — escolha conforme o tipo de pergunta:
-
-• Pergunta conceitual ("o que é", "como funciona", "explique"):
-  Use as seções em Markdown:
-  ## O que é
-  ## Aplicações
-  ## Exemplo
-  ## Analogia
-
-• Pergunta factual ou histórica ("quem criou", "quando surgiu", "qual o nome"):
-  Responda em 1 a 3 parágrafos diretos, sem seções forçadas.
-
-• Pergunta procedural ("como fazer", "quais os passos", "como implementar"):
-  Use lista numerada com os passos.
-
-• Pergunta comparativa ("qual a diferença", "compare", "vantagens e desvantagens"):
-  Use bullet points paralelos ou tabela Markdown.
-
----
 Contexto:
 {context}
 
@@ -39,20 +21,23 @@ Pergunta: {question}
 
 Resposta:"""
 
-CRITIC_PROMPT = """Você é um avaliador de respostas educacionais sobre Computação Gráfica.
+CRITIC_PROMPT = """Você é uma professora avaliando respostas de monitoria sobre Computação Gráfica.
 
-Pergunta: {question}
+Pergunta do aluno: {question}
 
-Avalie as {n} respostas abaixo e escolha a que:
-1. Responde corretamente e diretamente à pergunta
-2. Está baseada em conteúdo técnico real de Computação Gráfica (não em conhecimento genérico)
-3. É mais precisa e completa
-
-Responda APENAS com o número da melhor resposta (ex: 1 ou 2).
+Avalie cada resposta abaixo com uma nota de 0 a 10 considerando:
+- Coerência: a resposta faz sentido e é internamente consistente?
+- Correção técnica: as informações estão corretas para Computação Gráfica?
+- Relevância: responde diretamente o que foi perguntado?
+- Fundamentação: está baseada em conteúdo técnico real (não inventado)?
 
 {candidates}
 
-Melhor resposta (apenas o número):"""
+Para cada resposta, dê uma nota. Depois indique qual é a melhor.
+Formato obrigatório:
+Resposta 1: <nota>/10
+Resposta 2: <nota>/10
+Melhor: <número>"""
 
 
 def _split_results(results: list, n: int) -> list[list]:
@@ -79,12 +64,16 @@ def generate_response(query: str, topic: str, results: list, model: ChatOllama) 
     critic = ChatOllama(model=CHAT_MODEL, temperature=0)
     raw = (ChatPromptTemplate.from_template(CRITIC_PROMPT) | critic).invoke({
         "question": query,
-        "n": n,
         "candidates": numbered,
     }).content.strip()
 
-    match = re.search(r"\d", raw)
-    idx = int(match.group()) - 1 if match else 0
+    # Tenta ler "Melhor: N", senão cai para o primeiro dígito encontrado
+    best_match = re.search(r"(?i)melhor\s*[:=]\s*(\d+)", raw)
+    if best_match:
+        idx = int(best_match.group(1)) - 1
+    else:
+        fallback = re.search(r"\d", raw)
+        idx = int(fallback.group()) - 1 if fallback else 0
     idx = max(0, min(idx, len(candidates) - 1))
     return candidates[idx]
 
