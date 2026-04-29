@@ -198,9 +198,29 @@ Posso ajudar com tópicos como: OpenGL, Iluminação, Viewing 3D, entre outros.
 
 ---
 
+## Pendências / Próximos Passos
+
+### 1. Tradução automática de queries PT→EN antes do embedding
+O livro de referência está em inglês, mas as perguntas chegam em português. O modelo de embedding `nomic-embed-text` não faz retrieval cross-lingual de forma eficaz — os scores ficam abaixo do threshold e a busca cai para global, recuperando chunks pouco relacionados.
+
+**Solução planejada:** Adicionar um agente de tradução leve em `chatbot.py` que traduz a query para inglês antes de passá-la ao `hybrid_search`, mantendo a versão em português para exibição e histórico.
+
+### 2. Agente de clarificação por baixa confiança
+Quando o score de recuperação está abaixo do threshold, o sistema atualmente responde com confiança baixa ou inventa informações. O comportamento ideal seria pedir ao usuário que refine a pergunta.
+
+**Solução planejada:** Novo agente `agents/clarifier.py` — quando `results[0][1] < CLARIFICATION_THRESHOLD`, gera uma pergunta de esclarecimento ao usuário ("Você quer saber sobre X no contexto de 2D ou 3D?") antes de gerar a resposta. A API retornará `{"needs_clarification": true, "question": "..."}` e o frontend exibirá a pergunta como mensagem do assistente aguardando resposta.
+
+### 3. Guard de escopo — recusar perguntas fora de Computação Gráfica
+O guard rail de detecção de fora de escopo foi removido em versão anterior por estar bloqueando perguntas legítimas de CG. Precisa ser reintroduzido de forma mais precisa.
+
+**Solução planejada:** Novo agente `agents/scope_guard.py` com prompt SIM/NÃO e `temperature=0`. Só bloqueia se claramente fora do escopo (ex: receitas, história, política). Perguntas ambíguas passam normalmente. Retorna mensagem padrão sem chamadas LLM adicionais quando bloqueado.
+
+---
+
 ## Resultados Parciais / Relatórios
 | Data | Progresso | Observações |
 |------|-----------|-------------|
 | 20/04/2026 | 100% concluído | Base do chatbot com OpenAI + Redis completa. |
 | 28/04/2026 | Em andamento | Adaptação para Ollama + SQLite + router semântico híbrido. |
-| 28/04/2026 | Em andamento | Refatoração modular: agentes separados, auto-setup, detecção de fora de escopo. |
+| 28/04/2026 | Em andamento | Refatoração modular: agentes separados, auto-setup, interface web Luan.AI. |
+| 28/04/2026 | Em andamento | Testes com livro em inglês; pendências de tradução cross-lingual e clarificação identificadas. |
