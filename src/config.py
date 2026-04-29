@@ -11,7 +11,7 @@ CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2")
 EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 # Busca híbrida: score mínimo para preferir resultado filtrado por tópico
-HYBRID_THRESHOLD = 0.5
+HYBRID_THRESHOLD = 0.3
 # Score mínimo para considerar que há informação relevante
 NO_INFO_THRESHOLD = 0.1
 
